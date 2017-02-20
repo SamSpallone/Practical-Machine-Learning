@@ -1,0 +1,166 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Samantha Spallone"
+date: "February 19, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Instructions
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+
+### Review criteria
+
+#### What you should submit
+
+**The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing:**
+
+- **How you built your model**
+- **How you used cross validation**
+- **What you think the expected out of sample error is**
+- **Why you made the choices you did**
+
+**You will also use your prediction model to predict 20 different test cases.**
+
+#### Peer Review Portion
+
+Your submission for the Peer Review portion should consist of a link to a Github repo with your R markdown and compiled HTML file describing your analysis. Please constrain the text of the writeup to < 2000 words and the number of figures to be less than 5. It will make it easier for the graders if you submit a repo with a gh-pages branch so the HTML page can be viewed online (and you always want to make it easy on graders :-).
+Course Project Prediction Quiz Portion
+
+Apply your machine learning algorithm to the 20 test cases available in the test data above and submit your predictions in appropriate format to the Course Project Prediction Quiz for automated grading.
+
+#### Reproducibility
+
+Due to security concerns with the exchange of R code, your code will not be run during the evaluation by your classmates. Please be sure that if they download the repo, they will be able to view the compiled HTML version of your analysis.
+
+### Prediction Assignment Writeup
+
+#### Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+# Input Data
+
+I will load the R packages needed for analysis and download the training and testing data sets.
+
+```{r, results='hide', message=FALSE, warning=FALSE}
+# load the required packages
+library(caret); library(rattle); library(rpart); library(rpart.plot)
+library(randomForest); library(repmis); library(e1071)
+```
+
+```{r, results='hide', message=FALSE}
+# import the data from the URLs
+trainurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training <- source_data(trainurl, na.strings = c("NA", "#DIV/0!", ""), header = TRUE)
+testing <- source_data(testurl, na.strings = c("NA", "#DIV/0!", ""), header = TRUE)
+```
+
+```{r, comment=NA}
+dim(training)
+dim(testing)
+```
+
+The training dataset has 19622 observations and 160 variables, and the testing data set contains 20 observations and the same 160 variables.
+
+### Data Cleaning
+
+I will now delete columns (predictors) of the training set that contain any missing values.
+
+```{r, results='hide', message=FALSE}
+training <- training[, colSums(is.na(training)) == 0]
+testing <- testing[, colSums(is.na(testing)) == 0]
+```
+
+```{r, comment=NA}
+names(training)
+names(testing)
+```
+
+I will remove the first seven columns because these variables are irrelevant for predicting the outcome variable "classe."
+
+```{r, results='hide', message=FALSE}
+training_data <- training[, -c(1:7)]
+testing_data <- testing[, -c(1:7)]
+```
+
+```{r, comment=NA}
+dim(training_data)
+dim(testing_data)
+```
+
+The cleaned data sets both have 53 columns. The first 52 variables are the same, but the last variable in the training_data is "classe," while the last variable in the testing_data is "problem_id." The training_data still has 19622 rows, and testing_data still has 20 rows.
+
+### Data Spliting
+
+I will split the cleaned training set (training_data) into a training set (train) for prediction and a validation set (validate) for computing out of sample error.
+
+```{r, results='hide', message=FALSE}
+set.seed(7826) 
+inTrain <- createDataPartition(training_data$classe, p = 0.7, list = FALSE)
+train <- training_data[inTrain, ]
+validate <- training_data[-inTrain, ]
+```
+
+# Algorithm
+
+### Classification Tree
+
+Below is a 5-fold cross validation. I chose k=5 instead of the default, k=10, to save some computing time. I did not transform any variables.
+
+```{r, comment=NA}
+control <- trainControl(method = "cv", number = 5)
+fit_rpart <- train(classe ~ ., data = train, method = "rpart", trControl = control)
+print(fit_rpart, digits = 4)
+```
+
+```{r}
+fancyRpartPlot(fit_rpart$finalModel)
+```
+
+Now I will predict the outcomes using the validation data set.
+
+```{r, comment=NA}
+predict_rpart <- predict(fit_rpart, validate)
+confusion_rpart <- confusionMatrix(validate$classe, predict_rpart)
+confusion_rpart
+```
+
+```{r, comment=NA}
+accuracy_rpart <- confusion_rpart$overall[1]
+accuracy_rpart
+```
+
+The accuracy rate is 0.5 from the confusion matrix, which means that the out of sample error rate is 0.5. The classification tree is not a very good prediction, so I will try the random forest method next.
+
+### Random Forest
+
+```{r, comment=NA}
+fit_rf <- train(classe ~ ., data = train, method = "rf", trControl = control)
+print(fit_rf, digits = 4)
+```
+
+Now I will predict the outcomes again using the validation data set.
+
+```{r, comment=NA}
+predict_rf <- predict(fit_rf, validate)
+confusion_rf <- confusionMatrix(validate$classe, predict_rf)
+confusion_rf
+```
+
